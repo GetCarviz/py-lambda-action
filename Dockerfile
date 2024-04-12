@@ -1,4 +1,4 @@
-FROM --platform=linux/arm64 public.ecr.aws/lambda/python:3.11-arm64
+FROM public.ecr.aws/lambda/python:3.11
 
 # Use yum to update and install packages
 RUN yum update -y
