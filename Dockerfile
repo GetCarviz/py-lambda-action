@@ -1,7 +1,8 @@
-FROM --platform=linux/arm64 public.ecr.aws/lambda/python:3.12-arm64
+FROM --platform=linux/arm64 public.ecr.aws/lambda/python:3.11-arm64
 
 # Use yum to update and install packages
-RUN dnf install -y jq zip
+RUN yum update -y
+RUN yum install -y jq zip
 
 # Upgrade pip and install awscli
 RUN python -m pip install --upgrade pip
