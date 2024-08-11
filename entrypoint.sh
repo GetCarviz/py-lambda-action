@@ -41,20 +41,10 @@ update_function_layers(){
 	# Prepare the new layer ARN
 	local new_layer="${INPUT_LAMBDA_LAYER_ARN}:${LAYER_VERSION}"
 
-	# Initialize layers with the new layer
-	local complete_layers="$new_layer"
-
 	echo "The addon layer ARN is: $INPUT_ADDON_LAYER_ARNS"
 
-	# Add the single addon layer ARN if provided
-	if [[ -n "${INPUT_ADDON_LAYER_ARNS}" ]]; then
-		complete_layers="${complete_layers},${INPUT_ADDON_LAYER_ARNS}"
-	fi
-
-	echo "Updating the function with the new layers configuration: $complete_layers"
-
 	# Update the Lambda function with the new layers configuration
-	aws lambda update-function-configuration --function-name "${INPUT_LAMBDA_FUNCTION_NAME}" --layers $complete_layers
+	aws lambda update-function-configuration --function-name "${INPUT_LAMBDA_FUNCTION_NAME}" --layers $new_layer $INPUT_ADDON_LAYER_ARNS
 }
 
 deploy_lambda_function(){
