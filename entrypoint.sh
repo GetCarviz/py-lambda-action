@@ -52,6 +52,7 @@ update_function_layers(){
 
  	# Join the layers list into a comma-separated string
  	local layers=$(IFS=,; echo "${layers_list[*]}")
+	echo "Updating the function with the following layers: $layers"
 
  	# Update the Lambda function with the new layers configuration
 	aws lambda update-function-configuration --function-name "${INPUT_LAMBDA_FUNCTION_NAME}" --layers $layers
