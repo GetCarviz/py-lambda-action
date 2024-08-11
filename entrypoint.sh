@@ -41,8 +41,15 @@ update_function_layers(){
 	# Prepare the new layer ARN
 	local new_layer="${INPUT_LAMBDA_LAYER_ARN}:${LAYER_VERSION}"
 
-	# Add the single addon layer ARN
-	local complete_layers="${new_layer},${addon_layer_arns}"
+	# Initialize layers with the new layer
+	local complete_layers="$new_layer"
+
+	echo "The addon layer ARN is: $ADDON_LAYER_ARNS"
+
+	# Add the single addon layer ARN if provided
+	if [[ -n "${ADDON_LAYER_ARNS}" ]]; then
+		complete_layers="${complete_layers},${ADDON_LAYER_ARNS}"
+	fi
 
 	echo "Updating the function with the new layers configuration: $complete_layers"
 
