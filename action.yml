@@ -1,5 +1,5 @@
 name: Py Lambda Deploy
-author: Mariam Maarouf
+author: Evan Barberousse
 description: Deploy Python code to AWS Lambda with dependencies in a separate layer.
 inputs:
   requirements_txt:
@@ -16,6 +16,9 @@ inputs:
     description: The version of Python to build with.
     required: true
     default: '3.12'
+  addon_layer_arns:
+    description: A list of ARNs for additional layers to attach to the Lambda function.
+    required: false
 runs:
   using: 'docker'
   image: 'Dockerfile'
@@ -24,6 +27,7 @@ runs:
     - ${{ inputs.lambda_layer_arn }}
     - ${{ inputs.lambda_function_name }}
     - ${{ inputs.python_version }}
+    - ${{ inputs.addon_layer_arns }}
 branding:
   icon: 'layers'
   color: 'yellow'

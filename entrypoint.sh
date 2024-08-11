@@ -37,7 +37,24 @@ update_function_layers(){
 	done
  	echo "The Function State is: $function_state"
  	echo "The Function Status is: $function_status"
-	aws lambda update-function-configuration --function-name "${INPUT_LAMBDA_FUNCTION_NAME}" --layers "${INPUT_LAMBDA_LAYER_ARN}:${LAYER_VERSION}"
+
+ 	# Prepare the new layer ARN
+ 	local new_layer="${INPUT_LAMBDA_LAYER_ARN}:${LAYER_VERSION}"
+
+ 	# Convert the comma-separated list of addon layers into an array
+ 	IFS=',' read -r -a addon_layers_array <<< "$addon_layer_arns"
+
+ 	# Construct the complete list of layers, including the new layer
+ 	local layers_list=("$new_layer")
+ 	for addon_layer in "${addon_layers_array[@]}"; do
+ 	    layers_list+=("$addon_layer")
+ 	done
+
+ 	# Join the layers list into a comma-separated string
+ 	local layers=$(IFS=,; echo "${layers_list[*]}")
+
+ 	# Update the Lambda function with the new layers configuration
+	aws lambda update-function-configuration --function-name "${INPUT_LAMBDA_FUNCTION_NAME}" --layers $layers
 }
 
 deploy_lambda_function(){
