@@ -44,11 +44,11 @@ update_function_layers(){
 	# Initialize layers with the new layer
 	local complete_layers="$new_layer"
 
-	echo "The addon layer ARN is: $ADDON_LAYER_ARNS"
+	echo "The addon layer ARN is: $INPUT_ADDON_LAYER_ARNS"
 
 	# Add the single addon layer ARN if provided
-	if [[ -n "${ADDON_LAYER_ARNS}" ]]; then
-		complete_layers="${complete_layers},${ADDON_LAYER_ARNS}"
+	if [[ -n "${INPUT_ADDON_LAYER_ARNS}" ]]; then
+		complete_layers="${complete_layers},${INPUT_ADDON_LAYER_ARNS}"
 	fi
 
 	echo "Updating the function with the new layers configuration: $complete_layers"
