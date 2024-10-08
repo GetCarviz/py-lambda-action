@@ -10,7 +10,7 @@ install_zip_dependencies(){
 
 publish_dependencies_as_layer(){
 	echo "Publishing dependencies as a layer..."
-	local result
+ 	local result
 	result=$(aws lambda publish-layer-version --layer-name "${INPUT_LAMBDA_LAYER_ARN}" --zip-file fileb://dependencies.zip --compatible-runtimes "python${INPUT_PYTHON_VERSION}" --compatible-architectures "x86_64")
 	LAYER_VERSION=$(jq '.Version' <<< "$result")
 	rm -rf python
@@ -25,15 +25,18 @@ publish_function_code(){
 
 update_function_layers(){
 	echo "Using the layer in the function..."
-	local function_state
-	local function_status
+ 	local function_state
+  	local function_status
 	function_state=$(aws lambda get-function --function-name "${INPUT_LAMBDA_FUNCTION_NAME}" --query 'Configuration.State')
-	function_status=$(aws lambda get-function --function-name "${INPUT_LAMBDA_FUNCTION_NAME}" --query 'Configuration.LastUpdateStatus')
+ 	function_status=$(aws lambda get-function --function-name "${INPUT_LAMBDA_FUNCTION_NAME}" --query 'Configuration.LastUpdateStatus')
+  	echo "Waiting... Current Function State is $function_state and Function Status is $function_status"
+	sleep 10
 	while [[ $function_state != "\"Active\"" && $function_status != "\"Successful\"" ]]
-	do
+ 	do
 		function_state=$(aws lambda get-function --function-name "${INPUT_LAMBDA_FUNCTION_NAME}" --query 'Configuration.State')
-		function_status=$(aws lambda get-function --function-name "${INPUT_LAMBDA_FUNCTION_NAME}" --query 'Configuration.LastUpdateStatus')
-		sleep 1
+  		function_status=$(aws lambda get-function --function-name "${INPUT_LAMBDA_FUNCTION_NAME}" --query 'Configuration.LastUpdateStatus')
+    		echo "Waiting... Current Function State is $function_state and Function Status is $function_status"
+		sleep 10
 	done
 	echo "The Function State is: $function_state"
 	echo "The Function Status is: $function_status"
