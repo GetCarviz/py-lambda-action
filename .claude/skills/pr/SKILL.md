@@ -1,126 +1,177 @@
 ---
 name: pr
-description: Crée ou met à jour une Pull Request GitHub sur un repo Carviz (GetCarviz/*) : branche, lint, commit, push, titre, description au format Marketing (ticket Jira CVZ, description, PR liées, comment tester), labels, assignee, draft/ready. Déduit tout et ne pose qu'une seule question de confirmation, à la fin. À utiliser quand l'utilisateur veut committer et/ou ouvrir une PR dans un repo Carviz.
+description: Use when opening, drafting or updating a GitHub pull request on a Carviz repo (GetCarviz/*) — writing its title or description, pushing a branch for review, or reviewing a branch before handing it to a reviewer.
 ---
 
-# Skill : Créer ou mettre à jour une Pull Request (Carviz)
+# Opening Pull Requests on Carviz (GitHub)
 
-Adaptée de la skill `/pr` d'OF-Marketing (`OF-Marketing/api/.claude/skills/pr/SKILL.md`). Différences : multi-repo (27 repos `GetCarviz/*`), pas de template dans les repos (structure définie ici), ticket par défaut `CVZ-540`, opérations GitHub via `gh` (pas de MCP GitHub), branche cible = branche d'intégration du repo.
+Port of the Team IO GitLab conventions (`opening-merge-requests` +
+`reviewing-branch-before-merge-request`, Confluence IO page 1853587477) to the
+`GetCarviz/*` repos: GitHub via `gh`, integration branch `dev` (`development` on Dashboard), Jira project `CVZ`.
 
-Aucune action locale ou distante (commit, push, création de PR, labels, assignee, passage en ready) n'est exécutée sans la confirmation unique de l'Étape 5.
+Nothing local or remote (commit, push, PR, labels, ready) runs before the single
+confirmation of step 5.
 
-## Étape 1 — Analyse initiale (toujours)
+## 1. Scope
 
-1. Repo : celui du dossier courant (`git rev-parse --show-toplevel`) ou celui nommé par l'utilisateur, sous `~/dev/Carviz/<Repo>`. Repo GitHub : `GetCarviz/<Repo>`. Ignorer les repos du dossier `[DELETE]/`.
-2. Branche d'intégration (base des PR) : `dev` si elle existe sur `origin`, sinon `development`, sinon la branche par défaut (`gh api repos/GetCarviz/<Repo> --jq .default_branch`). Ne jamais viser `main`/`master` directement sauf demande explicite.
-3. Branche courante, `git status`, `git diff` (et `git diff origin/<base>...HEAD` si des commits existent déjà) pour comprendre ce qui a été fait.
-4. PR existante pour la branche : `gh pr list -R GetCarviz/<Repo> --head <branche> --json number,isDraft,url`.
-5. Lint : lancer le linter du repo **seulement s'il est déjà disponible localement** (ex. Engine : `ruff` ; fronts Nuxt : `eslint` si `node_modules` présent). Ne jamais lancer d'install (`npm install`, `uv sync`, `pip install`) pour linter : règle du `CLAUDE.md` Carviz (relire scripts et dépendances avant toute install). Corrections auto possibles → les appliquer et le noter ; problèmes persistants ou lint non lancé → le signaler dans le récapitulatif.
-6. Signaler dans le récapitulatif : nouvelle migration (Models : Alembic ; Supabase : `supabase/migrations`), changement de `pyproject.toml`/`uv.lock`/`package.json`/lockfile, de workflow `.github/`, de secret ou de variable d'env.
-7. Contrôle sécu du diff (règle §2 du `CLAUDE.md` Carviz) : aucun secret, URL inconnue ou code suspect ne doit partir dans la PR. Trouvaille → notifier immédiatement, sans attendre l'Étape 5.
+```bash
+REPO=$(basename "$(git rev-parse --show-toplevel)")        # GitHub: GetCarviz/$REPO
+BASE=$(for b in dev development; do
+  git ls-remote --exit-code --heads origin "$b" >/dev/null && echo "$b" && break
+done)
+BASE=${BASE:-$(gh api "repos/GetCarviz/$REPO" --jq .default_branch)}
+BRANCH=$(git branch --show-current)   # or a branch named by your partner
+TIP=HEAD                              # origin/$BRANCH when it is not checked out
+TICKET=CVZ-540                        # see the Ticket rule below
+git fetch origin
+git log --oneline "origin/$BASE..$TIP"
+git diff --stat "origin/$BASE...$TIP"
+gh pr list -R "GetCarviz/$REPO" --head "$BRANCH" --json number,isDraft,url
+# Related PRs: sibling branches on the same ticket, here and in the other Carviz repos
+git branch -r | grep -i "$TICKET"
+gh pr list -R "GetCarviz/$REPO" --search "$TICKET" --json number,headRefName,url
+```
 
-## Étape 2 — Nouvelle branche ou pas (déduit, jamais demandé)
+* `BASE` is `dev` when it exists, else `development` (Dashboard), else the default branch. Never `main` unless asked.
+* Reviewing a branch that is not checked out: work on `origin/$BRANCH` with `git -C`,
+  never check it out over your partner's working tree.
+* On `$BASE`/`main` with changes → new branch from `origin/$BASE`:
+  `<type>/<TICKET>-<kebab-summary>` (e.g. `fix/CVZ-540-reporting-providers-deadline`).
+* Ticket: the one named in the conversation, else **`CVZ-540`** (takeover ticket).
+* No `gh`? Stop and ask for `brew install gh` then `! gh auth login`; you may still
+  write the title and description to a file for a manual paste.
 
-- Sur la branche d'intégration ou sur `main`/`master` → nouvelle branche obligatoire, créée depuis `origin/<base>` à jour (Étape 3).
-- Sur une autre branche → rester dessus par défaut (Étape 4), sauf si la conversation indique clairement d'empiler une branche enfant (Étape 3, base = branche courante, PR parente ajoutée en « PR liée »).
-- Plusieurs PR demandées d'un coup (ex. « fais en 2 PR ») → une branche par PR, chacune depuis `origin/<base>`, un seul récapitulatif à l'Étape 5 qui les présente toutes.
+## 2. Review the whole branch first
 
-## Étape 3 — Parcours « nouvelle branche »
+The PR is judged on **the whole branch against its intent**, never on the last commit.
 
-### 3.1 — Ticket Jira
+1. **Spec**: fetch the Jira ticket (Atlassian MCP, cloud `log-ita.atlassian.net`). If it is
+   generic (`CVZ-540` is an onboarding spike), derive the intent from the commits and state
+   it as an assumption.
+2. **Evidence**: run the repo's lint/typecheck/tests **only with tooling already installed**
+   (`ruff`, `pytest`, `deno check`, `eslint` when `node_modules` exists). Never run an install
+   to lint — Carviz rule: read scripts and dependencies before any install. Quote the real
+   output; a check that did not run is reported as not run, with why.
+3. **Axes**: spec compliance · correctness (error handling, timeouts, retries, auth) ·
+   security (no secret, unknown URL or suspicious code in the diff — report at once) ·
+   simplification (dead code, duplication) · commit hygiene (atomic, Conventional Commits).
+4. **Flag**: migrations (Alembic, `supabase/migrations`), lockfile or dependency changes,
+   `.github/workflows`, new secrets or env vars.
 
-Ticket mentionné dans la conversation, sinon **`CVZ-540`** par défaut (ticket de reprise). Lien : `https://log-ita.atlassian.net/browse/<TICKET>`.
-
-### 3.2 — Titre de la PR (anglais)
-
-Format Marketing : `Feature/Fix/Chore : Context - Short description`, toujours en anglais (ex. `Chore : Dependencies - Bump boto3, requests, pillow, python-dotenv`).
-
-### 3.3 — Branche
-
-`<type>/<TICKET>-<résumé-kebab-anglais>` (ex. `chore/CVZ-540-bump-python-deps`), convention déjà utilisée sur les repos Carviz.
-
-### 3.4 — Commit
-
-Conventional Commits en anglais, ticket en fin de sujet : `chore(deps): bump boto3, requests, pillow, python-dotenv (CVZ-540)`. Corps si le « pourquoi » n'est pas évident. Terminer par la ligne `Co-Authored-By` demandée par le harness.
-
-### 3.5 — Description de la PR
-
-Pas de template dans les repos Carviz : utiliser cette structure (reprise du template Marketing), contenu en anglais comme les tickets CVZ :
+Report to your human partner in French, verdict first:
 
 ```markdown
-# Ticket(s) Jira
+## Revue de branche — <branch> → <BASE>
+**Spec** : <CVZ-XXX — title | intention déduite : …>
+**Vérifications** : <check> <✅|❌|non lancé (raison)> · …
+### 🔴 Bloquants   ### 🟠 À corriger   ### 🔵 Nits      (`aucun` when empty)
+### Verdict
+<PRÊT POUR PR | CORRIGER D'ABORD — <n> bloquant(s)>
+```
 
-- https://log-ita.atlassian.net/browse/CVZ-xxx
+🔴 = broken build, failing check, secret in the diff, ticket requirement missing. A 🔴 blocks
+the PR. Key Considerations takes, in this order: unfixed 🟠, checks not run, then 🔵 if room
+is left. What does not fit its 5 bullets goes into a PR comment, never a sixth bullet.
 
-# Description
+**Deploy**: read the function's README / `deploy.sh` / `.github/workflows` to name the real
+deploy action, instead of guessing it from the diff.
 
-<Domaine fonctionnel/technique concerné et ce qui a été fait. Points d'attention pour le reviewer (migration, lockfile, breaking change, déploiement).>
+## 3. Title
 
-# PR GitHub liée(s)
+English. `CVZ-XXX type(scope): concise-description`, no brackets.
+`type` = Conventional Commit type; `scope` = the component (`reporting`, `scheduler`, `ci`…).
+Example: `CVZ-540 fix(reporting): per-entity OpenFlex collection, providers override, time budget`.
 
-- <https://github.com/GetCarviz/<Repo>/pull/<n>> ou _None_
+Commits keep the Carviz form: `fix(reporting): … (CVZ-540)`, body only for the *why*.
 
-# Comment tester ?
+## 4. Description
 
-- <Instructions concrètes : endpoint + payload (Engine), page + action (App/Dashboard), commande (tests, nox)…>
+English, readable in under a minute. Intent and the decisions a reviewer would otherwise
+reverse-engineer — the diff shows the rest.
+
+```markdown
+## Summary
+
+<2–3 sentences, 350 characters max: what changes, why, the decisions that matter.>
+
+## References
+
+- [CVZ-XXX](https://log-ita.atlassian.net/browse/CVZ-XXX)
+
+## Related PRs
+
+- [<Repo>#<n>](https://github.com/GetCarviz/<Repo>/pull/<n>)
+
+## Deploy
+
+- [ ] <action: function/stack to redeploy, secret or env var (name + where), migration>
+
+## Key Considerations
+
+- <5 bullets max, one line each: risks, unfixed review findings, checks not run and why>
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
-- PR liées : PR parente (branche enfant), PR sœurs créées dans le même `/pr`, PR remplacées (ex. PR Dependabot), ou mention explicite.
-- Pas de valeur de secret dans la description : citer l'ID `S-xx` de `docs/SECURITE.md`.
+Only Summary is mandatory: a section with nothing to say is dropped, heading included.
+A link (References, Related PRs) stands alone; text follows it only when it carries a fact
+the reviewer needs — a required merge order, how the two PRs interact. Never a filler
+like "merge in any order" or "same change".
+Overflow goes to the Jira ticket. Secrets are cited by their `S-xx` id from
+`docs/SECURITE.md`, never by value.
 
-### 3.6 — Assignee et labels
+Write it to a file, then count and cut:
 
-- Assignee : `gh api user --jq .login`.
-- Labels : **uniquement des labels existants** (`gh label list -R GetCarviz/<Repo>`), ne jamais en créer. Correspondance : `Fix` → `bug`, `Feature` → `enhancement`, dépendances → `dependencies` (+ `python`/`javascript` si présents). `Chore` sans label correspondant → aucun label.
+```bash
+wc -m < "$BODY"
+sed -n '/^## Summary/,/^## /p' "$BODY" | sed '1d;$d' | wc -m   # ≤ 350
+```
 
-## Étape 4 — Parcours « pas de nouvelle branche »
+Cut in this order: how you got there, what the diff shows, justifications nobody asked for,
+any sentence that survives deletion. Never write "This PR introduces…", filler adjectives
+(comprehensive, robust, seamless), "leverage/utilize", a closing recap, or a list of files.
 
-- Message de commit comme en 3.4 s'il y a des changements non commités.
-- PR existante → commit + push suffisent.
-- Pas de PR → créer comme en 3.1, 3.2, 3.5, 3.6 ; type déduit du préfixe de la branche (`feat`/`feature`, `fix`, `chore`…). Préfixe non reconnaissable → le signaler avec le doute dans le récapitulatif.
+## 5. Recap and single confirmation
 
-## Étape 5 — Récapitulatif et confirmation unique
+Show: repo, branch → `BASE`, review verdict, flagged items, title, full description, commit
+message, labels, assignee, proposed draft/ready. Then **one** `AskUserQuestion`:
 
-Afficher, pour chaque PR : repo, branche source → base, statut du lint, points signalés (migration, lockfile, workflow, sécu), titre, description complète, message de commit, ticket, PR liées, labels, assignee, statut draft/ready proposé. Si des PR sont à fermer (ex. Dependabot remplacées), les lister avec le commentaire prévu.
+* New PR: "Create as draft" / "Create, ready for review" / "No, change something".
+* Existing PR: "Push (and update description)" / "Push and mark ready" / "No…".
 
-Puis **une seule question** (`AskUserQuestion`) :
+Ambiguities are listed in the recap, never asked separately.
 
-- Nouvelle(s) PR : « Oui, crée en draft » / « Oui, crée et ouvre à la review » / « Non, j'ai quelque chose à modifier ».
-- PR existante en draft : « Oui, pousse (reste en draft) » / « Oui, pousse et passe en ready » / « Non… ».
-- PR existante ready : « Oui, pousse » / « Non… ».
+## 6. Execute
 
-« Non… » → demander quoi changer, ajuster, réafficher le récapitulatif, reposer la question.
+```bash
+git add <files>            # never `git add .`: no .env, no stray files
+git commit && git push -u origin <branch>
+gh pr create -R "GetCarviz/$REPO" --base "$BASE" --head <branch> --draft \
+  --title "…" --body-file "$BODY"            # or: gh pr edit <n> --body-file "$BODY"
+gh pr edit <n> --add-assignee @me --add-label <label>   # existing labels only
+gh pr ready <n>                              # if chosen
+```
 
-## Étape 6 — Exécution
+Labels: only ones listed by `gh label list -R GetCarviz/$REPO`, never created —
+`fix` → `bug`, `feat` → `enhancement`, deps → `dependencies`, plus `claude` if it exists.
 
-En local :
-1. `git fetch origin` puis `git checkout -b <branche> origin/<base>` (nouvelle branche).
-2. `git add <fichiers concernés>` (pas de `git add .` aveugle : ne pas embarquer de `.env` ou de fichiers parasites).
-3. `git commit`, puis `git push -u origin <branche>` (premier push) ou `git push`.
-
-Via `gh` :
-1. `gh pr create -R GetCarviz/<Repo> --base <base> --head <branche> --draft --title … --body-file …`.
-2. `gh pr edit <n> --add-assignee @me [--add-label …]`.
-3. Si choisi : `gh pr ready <n>`.
-4. PR à fermer : `gh pr close <n> --comment "Superseded by #<m> …"` (une PR Dependabot fermée peut garder sa branche ; ne pas supprimer de branche sans demande).
-
-## Étape 7 — Résultat et suivi
-
-- Lien(s) des PR, résumé (branche, base, labels, assignee, draft/ready).
-- Si passée en ready : bloc Teams en texte brut :
+Once ready, give the Teams block as plain text (`<REPO>` uppercase, `FIX - ` prefix for a fix):
 
 ```text
 <REPO> - <Short description>
-<lien-de-la-PR>
+<PR URL>
 ```
 
-`<REPO>` en majuscules (`ENGINE`, `APP`, `DASHBOARD`…) ; type `Fix` → préfixer `FIX - `. Restée en draft → pas de bloc, le générer au passage en ready.
-- Mettre à jour `~/dev/TEMPS.md` (ligne ticket × `PR`, repo `Carviz/<Repo>`) et la doc `~/dev/Carviz/docs/` concernée (fiche repo, TODO) si la PR change quelque chose de documenté.
+## Common mistakes
 
-## Notes
-
-- Titre et description de PR en anglais ; doc locale `docs/` en français.
-- Rien n'est poussé ni créé sur GitHub sans la confirmation de l'Étape 5 : c'est la seule question de `/pr`.
-- Élément ambigu → le signaler dans le récapitulatif avec le doute, pas de question séparée.
+| Mistake | Fix |
+| --- | --- |
+| PR opened without reviewing the whole branch | Step 2 first; clear the 🔴 |
+| Base `main` | `dev`, else `development`, when it exists |
+| `[CVZ-540] fix: …` or no ticket in the title | `CVZ-540 fix(scope): …` |
+| "Context / Changes / How to test" layout, or a file list | Summary + optional sections above |
+| Summary over 350 characters | Count it, cut it |
+| Bare `CVZ-540` under References | Markdown link |
+| A check reported green that never ran | "not run (reason)" in Key Considerations |
+| `npm install` / `uv sync` just to lint | Lint only with tooling already present |
+| Label created on the fly | Existing labels only |
